@@ -1,7 +1,8 @@
 \documentclass[a4j,twocolumn]{jsarticle}
 
 \usepackage[top=6.6truemm,bottom=15truemm,left=9truemm,right=9truemm]{geometry}
-\usepackage[dvips]{graphicx}
+\usepackage[dvips,dvipdfmx]{graphicx}
+\usepackage{mediabb}
 \usepackage{bm}
 \usepackage{comment}
 \usepackage{amsmath}
@@ -70,122 +71,130 @@ $l-1$から$l$層に進む度、式(\ref{eq_gnn1})の畳み込み$\text{Conv}$�
 
 式(\ref{eq_gnn2})より、GNNは$\text{Conv}$を層数$L$回繰り返して得られる、$L$近傍内の頂点の属性が集約された$\bm{h}_v^L$を$\bm{h}_v$として出力する。
 
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{GNNの課題：Over-smoothingへの一考察}
-\label{sec_oversmoothing}
-
 GNNは層数$L$を適切な層数$L_v^*$に設定することで、質の高い表現を得ることができ、近年最高峰の分類精度を達成している。
 一方、GNNの層数$L$を$L_v^*$より大きくする程、表現$\bm{h}_v(=\bm{h}_v^L)$の質が低下し、その後のクラス分類精度も低下する現象をOver-smoothingと呼ぶ。
 適切な層数$L_v^*$のGNNが質の高い表現を得て、より多層$L(\le L_v^*)$のGNNが質の低い表現を得る理由について、本資料では、教師ラベル$Y_{train}$を用いることなく独自の観点から考察していく。
 
-考察のため、図の例を
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{提案手法}
+\section{提案インターフェース：Summarize-GNN}
 \label{sec_proposal}
 
-\vspace{-2mm}
-JKNetが用いるAD~Attentionに対し、我々は$\bm{f}_i^l$と$\bm{b}_i^l$間の類似度を求めるDot-product Attention~(DP Attention)\cite{Vaswani}を用いて頂点$v_i$から$N_{v_i}^l$への注目度$e_{v_i}^l$を求める。
+\begin{align}
+  & \bm{h}_v   = \text{Summarize}(\bm{h}_v^1,\ldots,\bm{h}_v^L) = \sum_{l=1}^L \alpha_v^l \bm{h}_v^l \label{eq_summarize1}
+\end{align}
+但し、$\alpha_v^l$は学習可能パラメータであり、$\sum_{l=1}^L \alpha_v^l=1$を満たす。
 
-\vspace{-2mm}
-\begin{equation}
-  e_{v_i}^l = dp(\bm{f}_i^l, \bm{b}_i^l) = \frac{\bm{f}_i^l~ \cdot ~\bm{b}_i^l}{\sqrt{d'}} \label{eq_DP_Attention}
-\end{equation}
-\vspace{-4mm}
+式(\ref{eq_gnn1})で示す従来のGNNのConvを$L$回繰り返し、表現の系列$\{\bm{h}_v^1,\ldots,\bm{h}_v^L\}$を得る。
+次に、式(\ref{eq_gnn2})で示すSummarize関数に$\{\bm{h}_v^1,\ldots,\bm{h}_v^L\}$を入力し、
+各表現$\bm{h}_v^l$をパラメータ$\alpha_v^l$で重み付け和して得たものを最終的な表現$\bm{h}_v$として出力する。
+尚、インターフェースを説明するこの節では、$\alpha_v^l$の具体的な学習手法は述べない。
 
+もしパラメータ$\alpha_v^l$が適切に学習できれば、頂点$v$が図\ref{fig_example}の頂点$1$については、$(\alpha_1^1,\alpha_1^2,\alpha_1^3)=(1,0,0)$で、1近傍内の属性が集約されている表現$\bm{h}_1^1$に大きな重み付けができる。
+一方、図\ref{fig_example}よりも大きなグラフの端にある頂点$v$については、$(\alpha_v^1,\alpha_v^2,\alpha_v^3)=(0,0,1)$で、より遠い近傍内の属性が集約されている表現$\bm{h}_v^3$に大きな重み付けができる。
+つまり、$\alpha_v^l$は、$l$が、頂点$v$にとって適切な集約距離$L_v^*$である確率と捉えられる。
+また、この$\alpha_v^l$を学習することは、頂点$v$ごとに適切な集約距離$L_v^*$を学習することに対応し、Over-smoothing防止が期待できる。
 
-JKNetと本論文で用いるADとDP Attentionの機構の違いが注目度$e_{v_i}^l$に与える影響について説明するために、図\ref{fig_alpha}の具体例を用いて説明する。
-また、クラス1に属する頂点らの$j$番目の属性値は同じ正規分布$N(\mu_1^j, \sigma_1^j)$に従い、異なるクラス2に属する頂点らの属性値は$N(\mu_2^j, \sigma_2^j)$に従うと仮定する。
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{提案手法：$\alpha_v^l$の教師なし学習}
+\label{sec_oversmoothing}
 
-\vspace{-2mm}
-\begin{equation}
-  x_i^j \sim
-      \begin{cases}
-          N(\mu_1^j, \sigma_1^j)    &   \text{$v_i$がクラス1に属するとき} \nonumber \\
-          N(\mu_2^j, \sigma_2^j)    &   \text{$v_i$がクラス2に属するとき} \nonumber
-      \end{cases}
-\end{equation}
+どのような条件を満たすときに、各$\alpha_v^l$が高くなるか考える。
+教師ラベルを全て用いてよい($Y_{train}=Y$)なら、$v$の$l$近傍内を、$v$と同ラベルの頂点$u$が多く占めるときの層数$l$こそが適切と考えられる。よってこの条件を満たす時$\alpha_v^l$が高くなると考えられる。
 
-\vspace{-1mm}
-\noindent
-図\ref{fig_alpha}のグラフ$G=(V,E,X)$のみを入力として、$v_{16}$の$N_{v_{16}}^l$への注目度$e_{v_{16}}^l$を$L=7$層のAttention~GNNで学習することを考える。
-\ref{sec_attention}節で述べたように、$\bm{b}_{16}^l$には$N_{v_{16}}^L$の属性が集約される。
-$L=7$のため、$N_{v_{16}}^7$は図\ref{fig_alpha}紫の実線で示されるように、クラス1と2に属するすべての頂点で構成される。
-よって図\ref{fig_alpha}下の紫の棒グラフで示されるベクトル$\bm{b}_{16}^4$と$\bm{b}_{16}^6$には、$N(\mu_1^j, \sigma_1^j)$に従う属性と$N(\mu_2^j, \sigma_2^j)$に従う属性が混合される。
+本研究では、教師ラベルを用いずに($Y_{train}=\varnothing$)、どのような条件を満たすときに各$\alpha_v^l$が高くなるか考える。
+説明のため、以下の各頂点$v$が単一の属性値$x_v\in \mathbb{R}$をもつ図の例を用いる。
+属性値$x_v$の大きさは、各頂点$v$の色の濃さで表す。
+また、各頂点の属性$x_v$はクラスラベル$y_v$に応じたガウス分布に従うと仮定する。
+例えばクラス数$c=2$のこの例の場合、クラスラベルが1の頂点の属性値$x_1,x_2,x_3$は$\mathbb{G}(\mu_1, \sigma_1^2)$に、クラスラベルが2の頂点の属性値$x_4,x_5,x_6$は$\mathbb{G}(\mu_2, \sigma_2^2)$に従う。
 
-一方、$\bm{f}_{16}^l$には$N_{v_{16}}^l$の属性が集約される。
-$l=4$のとき、$N_{v_{16}}^4$は図\ref{fig_alpha}左の青の破線のように、$v_{16}$と同じクラス2に属する頂点のみで構成される。
-よって図\ref{fig_alpha}左下の青の棒グラフの$\bm{f}_{16}^4$は、$N(\mu_2^j, \sigma_2^j)$に従う属性のみからなる。
-$l=6$のとき、$N_{v_{16}}^6$は図\ref{fig_alpha}右の紫の破線のように、クラス1と2の両方に属する頂点で構成される。よって図\ref{fig_alpha}右下の紫の棒グラフの$\bm{f}_{16}^6$には、$N(\mu_1^j, \sigma_1^j)$に従う属性と$N(\mu_2^j, \sigma_2^j)$に従う属性が混合される。
+この仮定の下、$l(=1,2,3)$が、頂点1にとって適切な集約距離$L_1^*$である確率$\alpha_1^l$が高くなる条件を考える。
 
-$v_{16}$は半径$l$が1から4までの$N_{v_{16}}^l$に注目すると望ましい。つまり注目度$e_{v_{16}}^l$が高いことが望ましい$l=4$(図\ref{fig_alpha}左)のとき、$\bm{f}_{16}^4$と$\bm{b}_{16}^4$間の類似度は低い。
-一方、$e_{v_{16}}^l$が低いことが望ましい$l=6$(図\ref{fig_alpha}右)のとき、$\bm{f}_{16}^6$と$\bm{b}_{16}^6$間の類似度は高い。
-
-\begin{figure}[b]
-  \begin{minipage}{0.49\hsize}
-   \begin{center}
-    \includegraphics[height=52mm,width=46mm]{alpha_l4.eps}
-   \end{center}
-  \end{minipage}
-  \begin{minipage}{0.49\hsize}
-  \begin{center}
-   \includegraphics[height=52mm,width=46mm]{alpha_l6.eps}
-  \end{center}
-  \end{minipage}
-\vspace{-1mm}
-\caption{$l=4,6$のときの$\bm{f}_{16}^l$と$\bm{b}_{16}^l$に属性が集約される様子}
-\label{fig_alpha}
+\begin{figure}[!h]
+  \centering
+  \includegraphics[height=10cm,width=9.5cm]{example.pdf}
+  \vspace{-6mm}
+  \caption{グラフ$G$と、集約距離$l$により変化する$h_1^l$の従う分布}
+  \label{fig_example}
 \end{figure}
 
-この、$\bm{f}_i^l$と$\bm{b}_i^l$間の類似度の大小が、望ましい注目度$e_{v_i}^l$を求めるヒントになることに着想を得て、本論文では$\bm{f}_i^l$と$\bm{b}_i^l$間の類似度を求める、式(\ref{eq_DP_Attention})のDP Attentionを用いる。
-更に、ADとDPを混合した機構であるMX Attention\cite{Kim}も用いる。
+$\mathbb{G}(\mu_1, \sigma_1^2)$と$\mathbb{G}(\mu_2, \sigma_2^2)$間には、図\ref{fig_example}右列一段目の紫色で塗りつぶした重なりがある。
+図\ref{fig_example}左列で紫色で塗り分けている頂点1の属性値$x_1$は、その重なった位置から生起しているため、頂点$v$のクラスラベルが1か2を予測することは困難である。
+つまり、分布間の重なりが大きくなるほど、頂点を正しくクラス分類することは困難になる。
 
-\vspace{-1mm}
-\begin{equation}
-  e_{v_i}^l = mx(\bm{f}_i^l, \bm{b}_i^l) = ad(\bm{f}_i^l, \bm{b}_i^l) \times \sigma(dp(\bm{f}_i^l, \bm{b}_i^l)) \label{eq_MX_Attention}
-\end{equation}
-\vspace{-5mm}
+しかし、層数1のGNNによって、頂点$1$には、1近傍内の属性が集約、足し合わされる(図\ref{fig_example}左列二段目)。
+つまり、同じガウス分布$\mathbb{G}(\mu_1, \sigma_1^2)$に従う属性が足し合わされる。
+同じガウス分布に従う属性を足し合わせることで得られる表現が従う分布は、元々従う分布$\mathbb{G}(\mu_1, \sigma_1^2)$と比較して、平均は維持したまま分散が小さくなる(図\ref{fig_example}右列一段目と二段目を比較)、ということが分布の再生成という統計の性質から知られている。
+よって、分布間の重なりを減らすことができ、頂点$v$を正しくクラス分類することが期待できる。
+また、このときの層数こそが、頂点$1$にとって適切な層数$L_1^*$と考える。
 
-\noindent
-ただし、$\sigma(\cdot)$はシグモイド関数である。
+しかし、$L_1^*$を超えて、2，3層と、よりGNNを多層にすると、異なるガウス分布$\mathbb{G}_2$から生起する属性も頂点$v$に足し合わされる(図\ref{fig_example}左列三、四段目)。
+すると、同じく分布の再生成という性質から、分布の平均は$\mu_1$と$\mu_2$の間にずれるため、分布間の重なりが増え、質の低い表現を得ることが危惧される(図\ref{fig_example}右列二段目から三、四段目)。
+結果として、多層にする程分類精度が低下するOver-smoothingを引き起こすと考えられる。
 
-式(\ref{eq_DP_Attention})のDPまたは式(\ref{eq_MX_Attention})のMX~Attentionを用いた我々のAttention~GNNは、式(\ref{eq_JKNet})のAD Attentionのみ用いるJKNetより、頂点ごとに理想的な半径の$N_{v_i}^l$からの属性の集約が可能であり、Over-smoothingの防止につながることが期待できる。
+以上から、GNNの層数$l$を1,2,3と伸ばすに連れて、各表現$\bm{h}_1^l$の従う分布がどのように移り変わるか観察した。
+その上で、本研究では、多層のGNNで得られる質の低い表現と、最も類似度が低い表現$\bm{h}_v^l$が得られるときの層数$l$こそが$L_v^*$と考える。
+$v$が図\ref{fig_example}のグラフの頂点1の場合の例で、説明する。
+図\ref{fig_example}右列二段目の分布から生起する表現$\bm{h}_1^1$と、右列四段目の分布から生起する表現$\bm{h}_1^3$間の類似度の期待値は低い。
+よって1層が$L_1^*$の確率が高いと考える。
+
+
+上記で述べた$\alpha_v^l$の学習手法は以下で具体的に求める。
+\begin{align}
+  & \overline{\alpha}_v^l = \text{Attention}(\bm{h}_v^l, \bm{h}_v^L) \label{eq_alpha_unnormalized} \\
+  & \alpha_v^l = \text{Softmax}(\overline{\alpha}_v^l, L) = \frac{\exp(\overline{\alpha}_v^l)}{\sum_{l'=1}^L \exp(\overline{\alpha}_v^{l'})} \label{eq_alpha_normalized}
+\end{align}
+式(\ref{eq_alpha_unnormalized})のAttentionとは、ベクトル間の関連度(類似度など)を深層学習法で解析する際に近年盛んに使われている機構である。
+このAttention関数を用いて$\bm{h}_v^l$と$\bm{h}_v^L$間の類似度を求め、$\overline{\alpha}_v^l$として出力する。
+式(\ref{eq_alpha_normalized})のSoftmax関数により、制約$\sum_{l=1}^L \alpha_v^l=1$を満たすように正規化する。
+
+\begin{figure}[!h]
+  \centering
+  \includegraphics[height=7cm,width=9.5cm]{summarize-gnn.pdf}
+  \vspace{-6mm}
+  \caption{Summarize-GNN(図\ref{fig_example}の例のグラフ$G$を入力した場合)}
+  \label{fig_summarize_gnn}
+\end{figure}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{評価実験}
 \label{sec_experiment}
 
-\vspace{-2mm}
-我々のDPまたはMX~Attention~GNNとJKNet\cite{Xu1}のAD~Attention~GNNを、どちらがOver-smoothingの防止性能が高いか、という観点から比較する。
-比較のため、各GNNによって頂点の表現学習とクラス分類をする。
-データセットは、タンパク質とその相互作用からなるPPI、電子掲示板に投稿するユーザとその関係からなるRedditの2つを用いる。
-
-GNNにより学習される各頂点の表現$\bm{h}_i$を入力として、線形変換とsoftmax関数により、クラスラベルの予測$\bm{\hat{y}}_i$を得る。訓練時は教師信号として与えられた一部のクラスラベルと予測$\bm{\hat{y}}_i$の誤差を求め、誤差逆伝搬法でGNNのパラメータを学習する。
-テスト時はGNNが正しく予測できたクラスラベルの割合$Acc$を求め、$Acc$の高さをGNNのクラス分類の性能とする。
-
-図\ref{fig_accuracy}は、横軸を各GNNの層数$L$、縦軸を$L$層のGNNでクラス分類したときの$Acc$として表す。
-我々のDPまたはMX~Attention~GNNでクラス分類したときの$Acc$を赤色で、JKNetのAD~Attention~GNNでクラス分類したときの$Acc$を青色の折れ線で表している。
-多層にしても、つまり横軸方向に進んでも、$Acc$を低下させずに維持できるAttention~GNNほど、Over-smoothingの防止性能が高いといえる。
-
-PPIとRedditデータセット共に、両Attention~GNNは、多層にしても$Acc$を維持できる点では共通するが、DPまたはMX~Attention~GNNの方がより高い$Acc$を維持できている。
-
-\begin{figure}[b]
-  \centering
-  \includegraphics[height=4.2cm,width=9.4cm]{acc.eps}
-  \vspace{-7mm}
-  \caption{各GNNの層数$L$に対するクラス分類の$Acc$}
-  \label{fig_accuracy}
-\end{figure}
+\begin{table}[h]
+  \begin{minipage}[t]{.45\textwidth}
+    \begin{center}
+      \begin{tabular}{|l|l|l|}
+        \hline
+        \multicolumn{1}{|c|}{} & \multicolumn{1}{c|}{$L=2$} & \multicolumn{1}{c|}{$L=8$} \\ \hline
+        GNN                    & 89.0                       & 76.8                       \\ \hline
+        Skip-GNN               & 89.0                       & 86.8                       \\ \hline
+        CS-GNN                 & 89.3                       & 88.8                       \\ \hline
+        SS-GNN                 & 89.6                       & 89.4                       \\ \hline
+      \end{tabular}
+    \end{center}
+    \caption{左側の表の見出し}
+    \label{左側の表のラベル}
+  \end{minipage}
+  %
+  \hfill
+  %
+  \begin{minipage}[t]{.45\textwidth}
+    \begin{center}
+      \begin{tabular}{|l|l|l|}
+        \hline
+        \multicolumn{1}{|c|}{} & \multicolumn{1}{c|}{$L=2$} & \multicolumn{1}{c|}{$L=8$} \\ \hline
+        GNN                    & 89.0                       & 76.8                       \\ \hline
+        Skip-GNN               & 89.0                       & 86.8                       \\ \hline
+        CS-GNN                 & 89.3                       & 88.8                       \\ \hline
+        SS-GNN                 & 89.6                       & 89.4                       \\ \hline
+      \end{tabular}
+    \end{center}
+    \caption{右側の表の見出し}
+    \label{右側の表のラベル}
+  \end{minipage}
+\end{table}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-\section{まとめと今後の展望}
-
-\vspace{-2mm}
-Over-smoothingの防止のため、頂点ごとに理想的な半径の$N_{v_i}^l$から属性を集約することを目的として、DP及びMX~Attention~GNNを提案した。
-実データセットを用いた評価実験によって、同じ目的のJKNetが提案したAD~Attention~GNNよりもOver-smoothingの防止性能が高いことが示された。
-今後は、他のデータセットでも同様の実験を行う予定である。
+\section{まとめ}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
