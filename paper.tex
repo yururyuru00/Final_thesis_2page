@@ -92,8 +92,9 @@ GNNは層数$L$を適切な層数$L_v^*$に設定することで、質の高い�
 
 もしパラメータ$\alpha_v^l$が適切に学習できれば、頂点$v$が図\ref{fig_example}の頂点$1$については、$(\alpha_1^1,\alpha_1^2,\alpha_1^3)=(1,0,0)$で、1近傍内の属性が集約されている表現$\bm{h}_1^1$に大きな重み付けができる。
 一方、図\ref{fig_example}よりも大きなグラフの端にある頂点$v$については、$(\alpha_v^1,\alpha_v^2,\alpha_v^3)=(0,0,1)$で、より遠い近傍内の属性が集約されている表現$\bm{h}_v^3$に大きな重み付けができる。
-つまり、$\alpha_v^l$は、$l$が、頂点$v$にとって適切な集約距離$L_v^*$である確率と捉えられる。
-また、この$\alpha_v^l$を学習することは、頂点$v$ごとに適切な集約距離$L_v^*$を学習することに対応し、Over-smoothing防止が期待できる。
+つまり、$\alpha_v^l$は、各$l$が頂点$v$にとって適切な集約距離$L_v^*$である確率と捉えられる。
+また、この$\alpha_v^l$を学習することは、$L_v^*$を学習することに対応し、Over-smoothing防止が期待できる。
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{提案手法：$\alpha_v^l$の教師なし学習}
@@ -148,17 +149,22 @@ $v$が図\ref{fig_example}のグラフの頂点1の場合の例で、説明す�
 このAttention関数を用いて$\bm{h}_v^l$と$\bm{h}_v^L$間の類似度を求め、$\overline{\alpha}_v^l$として出力する。
 式(\ref{eq_alpha_normalized})のSoftmax関数により、制約$\sum_{l=1}^L \alpha_v^l=1$を満たすように正規化する。
 
-\begin{figure}[!h]
-  \centering
-  \includegraphics[height=7cm,width=9.5cm]{summarize-gnn.pdf}
-  \vspace{-6mm}
-  \caption{Summarize-GNN(図\ref{fig_example}の例のグラフ$G$を入力した場合)}
-  \label{fig_summarize_gnn}
-\end{figure}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{評価実験}
 \label{sec_experiment}
+
+本研究が提案するモデルSummarize-GNNと既存モデルGNNを、どちらがOver-smoothingの防止性能が高いか、比較する。
+データセットは、論文とその引用関係からなるPubMed(頂点数二万)とArxiv(頂点数約二十万)を用いる。
+
+\ref{sec_definition}節で述べたように、グラフ$G$と教師ラベル集合$Y_{train}$を用いて、各モデルを学習する。次に、残りの頂点のラベル集合$Y_{test}$の内、学習済みモデルにより正しくラベルを予測できた割合を頂点の分類精度とする。
+Summarize~GNN及びGNNそれぞれでクラス分類したときの精度を、表\ref{table_pubmed}と表\ref{table_arxiv}で表している。
+
+多層にしても(層数$L$を増やしても)、精度を低下させずに維持できるモデルほど、Over-smoothingの防止性能が高いといえる。
+表\ref{table_pubmed}のPubMedの場合、Summarize-GNNが最も精度を維持できており、Over-smoothingの防止性能が高い。
+表\ref{table_pubmed}のPubMedの場合、精度の維持に留まらず、Summarize-GNNが最も精度を向上させていることが確認できた。
+また、他モデルよりメモリ量を要するCS-GNNがOOM~(Out~Of~Memory)に陥り実験できなかったことに対して、SS-GNNは両データセット共に実験できた。
+
 
 \begin{table}[!h]
   \begin{minipage}[!h]{.23\textwidth}
@@ -169,11 +175,12 @@ $v$が図\ref{fig_example}のグラフの頂点1の場合の例で、説明す�
         GNN                    & 89.0                       & 76.8                       \\ \hline
         Skip-GNN               & 89.0                       & 86.8                       \\ \hline
         CS-GNN                 & 89.3                       & 88.8                       \\ \hline
-        SS-GNN                 & 89.6                       & 89.4                       \\ \hline
+        SS-GNN                 & \bf{89.6}                  & \bf{89.4}                  \\ \hline
       \end{tabular}
     \end{center}
-    \caption{左側の表の見出し}
-    \label{左側の表のラベル}
+    \vspace{-3mm}
+    \caption{PubMedデータセット}
+    \label{table_pubmed}
   \end{minipage}
   %
   \hfill
@@ -182,20 +189,26 @@ $v$が図\ref{fig_example}のグラフの頂点1の場合の例で、説明す�
     \begin{center}
       \begin{tabular}{|l|l|l|}
         \hline
-        \multicolumn{1}{|c|}{} & \multicolumn{1}{c|}{$L=2$} & \multicolumn{1}{c|}{$L=8$} \\ \hline
-        GNN                    & 89.0                       & 76.8                       \\ \hline
-        Skip-GNN               & 89.0                       & 86.8                       \\ \hline
-        CS-GNN                 & 89.3                       & 88.8                       \\ \hline
-        SS-GNN                 & 89.6                       & 89.4                       \\ \hline
+        \multicolumn{1}{|c|}{} & \multicolumn{1}{c|}{$L=2$} & \multicolumn{1}{c|}{$L=6$} \\ \hline
+        GNN                    & 70.3                       & 70.9                       \\ \hline
+        Skip-GNN               & 70.3                       & 71.2                       \\ \hline
+        CS-GNN                 & OOM                        & OOM                        \\ \hline
+        SS-GNN                 & \bf{71.1}                  & \bf{72.7}                  \\ \hline
       \end{tabular}
     \end{center}
-    \caption{右側の表の見出し}
-    \label{右側の表のラベル}
+    \vspace{-3mm}
+    \caption{Arxivデータセット}
+    \label{table_arxiv}
   \end{minipage}
 \end{table}
 
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{まとめ}
+GNNの課題であるOver-smoothingを防止するべく、頂点$v$ごとの適切な集約距離$L_v^*$を学習するSS-GNNを提案した。
+既存モデルGNN，Skip-GNN，CS-GNNと比較して、SS-GNNは同等以上のOver-smoothing防止性能を持ちつつ、大規模データセットにも適用可能なモデルであることが実験的に示された。
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
